@@ -1,0 +1,652 @@
+% !TEX program = xelatex
+% 2026 年高教社杯全国大学生数学建模竞赛 E 题论文大纲
+% 使用方法：将本文件与 cumcm2026.sty 放在 Overleaf 项目根目录，编译器选择 XeLaTeX。
+% 红色“待补”内容仅用于写作阶段，定稿前应全部替换或删除。
+\documentclass[UTF8,a4paper,zihao=-4]{ctexart}
+\usepackage{cumcm2026}
+
+\newcommand{\placeholder}[1]{\textcolor{red}{【待补：#1】}}
+
+\title{基于多层效益评价与情景鲁棒优化的 SEM 广告投放策略}
+\mcmkeywords{搜索引擎营销；关键词分类；负二项回归；组合优化；鲁棒优化}
+
+\begin{document}
+
+\pagenumbering{arabic}
+\begin{mcmabstract}
+  针对搜索引擎营销中关键词竞价成本上升、投放效果存在差异且未来效果具有不确定性的问题，
+  本文基于某互联网公司 2025 年的方案、推广单元、关键词及注册数据，构建“投放诊断--关键词
+  分类--确定性优化--不确定性优化”的递进式模型，为有限预算下的 SEM 广告投放提供决策依据。
+
+  针对问题一，本文从广告创意代理指标、关键词管理、竞价与预算、投放时机四个方面建立多层
+  评价体系。利用点击率、点击成本、位置溢价、浏览深度等指标刻画投放质量，采用日历效应回归
+  和滞后回归分析工作日、周末及法定节假日的影响，并建立计数回归模型研究投放特征与新注册数
+  的统计关系。结果表明，\placeholder{填写最重要的 2--3 个定量结论}。
+
+  针对问题二，本文以“方案--推广单元--关键词”三元组为分类对象，先识别零成本、零效益的
+  无效词，再对有效词构造成本得分和效益得分。通过稳健标准化、低样本收缩和客观赋权降低极端
+  值与小样本波动的影响，依据成本--效益二维阈值将关键词划分为黄金词、重点词、潜力词和问题词。
+  分类结果为：\placeholder{填写五类关键词数量、比例及代表性关键词}。
+
+  针对问题三，本文以离散投放档位表示关键词每日投入，建立含预算、推广单元覆盖、关键词类型
+  及跨单元冲突约束的混合整数规划模型。在不超过原时段预算的条件下，分别求得 2025 年 2 月
+  1--8 日和 8 月 1--8 日的最优投放策略。与原方案相比，\placeholder{填写成本、点击、浏览和
+  注册等指标的改善幅度}。
+
+  针对问题四，本文以关键词点击成本作为竞价代理量，通过滚动回测与分块 Bootstrap 构造竞价、
+  展现、展位、点击、浏览及注册量的预测区间，并在多情景下引入条件风险价值约束，建立情景鲁棒
+  优化模型。所得 2026 年 9 月 11--17 日策略在满足预算约束的同时，\placeholder{填写期望效益、
+  风险及相对基准方案的改进结果}。敏感性分析表明，\placeholder{填写稳定性结论}。
+\end{mcmabstract}
+
+\clearpage
+
+\section{问题重述}
+
+某互联网公司围绕同一产品设计了 5 个 SEM 广告方案和 12 个推广单元，并使用大量关键词进行
+竞价投放。2025 年公司投入约 142 万元，获得了展现、点击、浏览和注册等效果。由于关键词成本、
+用户行为与广告位置均随时间变化，需要在有限预算下改进投放策略。本文需要解决以下问题：
+
+\begin{enumerate}
+  \item 基于 2025 年数据，从广告质量与创意、关键词管理、出价与预算、投放时间等方面评价
+  现有策略，并识别投放效益的时间规律和假日效应；
+  \item 从投入成本和投放效益两个维度，将关键词划分为黄金词、重点词、潜力词、问题词和
+  无效词，并生成 \texttt{result2.xlsx}；
+  \item 结合关键词类别及其关联关系，在预算约束下为各推广单元选择关键词，给出 2025 年
+  2 月 1--8 日和 8 月 1--8 日的逐日优化策略，并生成 \texttt{result3.xlsx}；
+  \item 考虑竞价和投放效果的不确定性，为 2026 年 9 月 11--17 日制定逐日优化策略，估计
+  各项指标的期望范围，并生成 \texttt{result4.xlsx}。
+\end{enumerate}
+
+\section{问题分析}
+
+\subsection{问题一分析}
+
+题目没有直接提供广告文案、创意素材和用户级转化路径，因此广告设计质量不能直接测量。本文
+以控制展位与日期因素后的点击率、跳出率和平均访问时长作为创意与相关性的代理指标；以关键词
+有效率、重复投放率和消费集中度评价关键词管理；以 CPC、位置溢价和预算集中度评价出价策略；
+以日历效应和滞后效应评价投放时机。由于注册数据只有日级总量，本文仅研究投放与注册之间的
+统计关联和预测关系，不作用户级因果归因。
+
+\subsection{问题二分析}
+
+五类关键词本质上是成本--效益平面上的四象限分类外加零投入、零产出的特殊类别。关键词编码
+会跨推广单元、跨方案重复，因此分类对象不能只是关键词编码，而应是
+“方案 ID--推广单元 ID--关键词”投放记录。对点击量很少的关键词，其跳出率和访问时长波动较大，
+需先作可靠性收缩，再计算综合效益。
+
+\subsection{问题三分析}
+
+附件只给出关键词年度汇总和推广单元日级数据，没有关键词日级数据。因此先利用年度关键词表现
+与推广单元日级季节因子估计关键词在目标日期的成本和效益，再将每个关键词设置为若干可选投放
+档位，建立混合整数规划。优化时以原时段实际总消费作为预算基准，从而在相同预算口径下与原方案
+进行公平比较。
+
+\subsection{问题四分析}
+
+2026 年的竞价、流量和转化均未知，单点预测不足以支撑决策。本文使用滚动回测和分块 Bootstrap
+构造参数情景，给出各指标的期望和预测区间，并在目标函数中加入尾部风险惩罚，以获得对参数扰动
+不敏感的投放方案。附件未给出真实出价，故使用 CPC 作为竞价代理量并明确其适用边界。
+
+\subsection{总体技术路线}
+
+\begin{figure}[H]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering
+    原始数据校验与层级重构
+    $\longrightarrow$ 问题一：多层诊断与时间效应
+    $\longrightarrow$ 问题二：成本--效益分类\\[0.4em]
+    $\longrightarrow$ 问题三：确定性组合优化
+    $\longrightarrow$ 问题四：预测区间与情景鲁棒优化
+    $\longrightarrow$ 回测、敏感性分析与策略建议
+  }}
+  \caption{总体建模流程}
+  \label{fig:route}
+\end{figure}
+
+\section{模型假设与符号说明}
+
+\subsection{模型假设}
+
+\begin{enumerate}
+  \item 附件中的投放记录真实可靠，极少量口径异常不会显著改变总体结论；
+  \item Sheet3 中“/”表示没有点击或访问时指标无定义，属于结构性缺失，不作均值填补；
+  \item 在控制星期、月份、节假日和趋势后，2025 年估计的相对投放规律可迁移至相似日期；
+  \item CPC 可作为关键词实际竞价水平的代理，但不等同于搜索平台后台设置的真实出价；
+  \item 日级总注册数可用于总体效果预测，但不能无条件归因到单个方案、推广单元或关键词；
+  \item 同一关键词在不同方案或推广单元中的投放视为不同记录，其表现允许存在差异。
+\end{enumerate}
+
+\subsection{主要符号}
+
+\begin{table}[H]
+  \centering
+  \caption{主要符号说明}
+  \label{tab:symbols}
+  \begin{tabularx}{0.92\textwidth}{cX}
+    \toprule
+    符号 & 含义 \\
+    \midrule
+    $p,u,k,t$ & 方案、推广单元、关键词和日期的索引 \\
+    $I,C,B$ & 展现量、点击量和消费额 \\
+    $V,R$ & 浏览量和新注册数 \\
+    $q^{\mathrm{top}},q^{\mathrm{first}}$ & 上方位展现率和首位展现率 \\
+    $C_{ku}^{\mathrm{cost}},E_{ku}^{\mathrm{eff}}$ & 关键词成本得分和效益得分 \\
+    $z_{kut\ell}$ & 日期 $t$ 是否对关键词 $k$ 采用第 $\ell$ 个投放档位 \\
+    $b_{kut\ell}$ & 对应投放档位的预计投入金额 \\
+    $\omega$ & 表示未来参数组合的不确定情景 \\
+    $\alpha$ & 模型对尾部风险的置信水平 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\section{数据预处理与描述性分析}
+
+\subsection{数据结构与主键}
+
+附件 1 的三张表分别包含 2627 条日级推广单元记录、365 条日级注册记录和 2227 条关键词投放
+记录。经检查，共有 5 个方案、12 个推广单元和 1884 个不同关键词编码。本文采用表
+\ref{tab:data-key} 所示主键。
+
+\begin{table}[H]
+  \centering
+  \caption{数据表结构与分析用途}
+  \label{tab:data-key}
+  \begin{tabularx}{0.94\textwidth}{cXX}
+    \toprule
+    数据表 & 建议主键 & 主要用途 \\
+    \midrule
+    Sheet1 & 日期、方案 ID、推广单元 ID & 日级投放规律、预算、位置与点击分析 \\
+    Sheet2 & 日期 & 日级总注册效果分析 \\
+    Sheet3 & 方案 ID、推广单元 ID、关键词 & 关键词分类和优化参数估计 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+Sheet1 与 Sheet3 的全年点击量均为 834815，全年消费额仅存在由四舍五入造成的微小差异，说明
+两者可在推广单元层面对账。关键词编码不是全局唯一主键；同一关键词可能出现在不同推广单元，
+甚至跨方案出现。
+
+\subsection{异常值与结构性缺失处理}
+
+\begin{enumerate}
+  \item 将日期字段统一为日期类型，并建立月份、星期、周末、法定节假日和节前节后哑变量；
+  \item 将跳出率和平均访问时长中的“/”标记为结构性缺失；对于零消费、零点击、零浏览记录，
+  保留原值供无效词识别，不进行插补；
+  \item 对消费、点击和浏览等右偏变量采用 $\log(1+x)$ 变换；
+  \item 检查 $C\leq I$、上方位展现量不超过总展现量等逻辑约束，对异常记录进行标记，并通过
+  保留/剔除两种口径作稳健性检验；
+  \item 不删除跨单元重复关键词，以三元组标识其不同投放环境。
+\end{enumerate}
+
+\subsection{基础指标构造}
+
+对方案、推广单元和日期分别计算
+\begin{align}
+  \mathrm{CTR}&=\frac{C}{I}, &
+  \mathrm{CPC}&=\frac{B}{C},\\
+  q^{\mathrm{top}}&=\frac{I^{\mathrm{top}}}{I}, &
+  q^{\mathrm{first}}&=\frac{I^{\mathrm{first}}}{I},\\
+  \mathrm{CTR}^{\mathrm{top}}&=\frac{C^{\mathrm{top}}}{I^{\mathrm{top}}}, &
+  \mathrm{CPC}^{\mathrm{top}}&=\frac{B^{\mathrm{top}}}{C^{\mathrm{top}}}.
+\end{align}
+当分母为零时，相应比率记为无定义而非零。聚合时重新用总量计算比率，不对日比率直接取平均。
+
+\subsection{描述性统计}
+
+\placeholder{放入方案级和推广单元级核心统计表，正文只保留最能支持结论的指标。}
+
+\placeholder{放入全年消费、点击、CPC、注册量的时间序列图及月度/星期箱线图。}
+
+\section{问题一：2025 年 SEM 投放策略评价}
+
+\subsection{广告设计质量与创意的代理评价}
+
+在缺少广告文案和素材的条件下，将点击视为“广告被看见后产生兴趣”的观测结果。设推广单元
+$u$ 在日期 $t$ 的点击概率为 $p_{ut}$，建立二项广义线性模型：
+\begin{equation}
+  C_{ut}\sim\operatorname{Binomial}(I_{ut},p_{ut}),
+\end{equation}
+\begin{equation}
+  \operatorname{logit}(p_{ut})=eta_0+\beta_u+eta_1q^{\mathrm{top}}_{ut}
+  +\beta_2q^{\mathrm{first}}_{ut}+\boldsymbol{\gamma}^{\mathsf T}\boldsymbol d_t.
+\end{equation}
+其中 $\boldsymbol d_t$ 包含月份、星期、节假日和趋势变量。控制位置及时点后，推广单元固定效应
+$\beta_u$ 可作为创意相关性与设计质量的代理。再结合关键词跳出率和平均访问时长，区分“高点击、
+低浏览”的诱导式流量与真正具有持续关注度的流量。
+
+\placeholder{填写各推广单元调整后 CTR、跳出率与访问时长的评价结果。}
+
+\subsection{关键词管理与运用评价}
+
+从以下三个方面评价关键词管理：
+\begin{enumerate}
+  \item 有效率：产生消费、点击或浏览的关键词占比；
+  \item 集中度：用赫芬达尔指数
+  \begin{equation}
+    HHI_u=\sum_{k\in K_u}\left(\frac{B_{ku}}{\sum_{j\in K_u}B_{ju}}\right)^2
+  \end{equation}
+  衡量单元消费是否过度集中于少数关键词；
+  \item 关联与冲突：构造推广单元--关键词二部图，统计跨单元重复词比例及单元间 Jaccard 相似度。
+\end{enumerate}
+
+\placeholder{填写无效词比例、消费集中度和跨单元重复投放的主要问题。}
+
+\subsection{出价策略与预算合理性}
+
+以 CPC 表示单位点击成本，以
+\begin{equation}
+  \rho^{\mathrm{pos}}_{ut}=\frac{\mathrm{CPC}^{\mathrm{top}}_{ut}}
+  {\mathrm{CPC}_{ut}}
+\end{equation}
+表示上方位置的成本溢价。比较高位展现率提升对 CTR、浏览和注册的边际贡献，识别“高溢价但
+低增益”的过度竞价。进一步比较方案的消费占比与点击、浏览及预测注册贡献占比，判断预算分配
+是否与综合效益匹配。
+
+\placeholder{填写各方案和推广单元的预算效率、位置溢价及调整建议。}
+
+\subsection{投放时间规律与假日效应}
+
+对消费、点击、CPC 和注册量分别作趋势分解，并建立含日历变量的回归模型：
+\begin{equation}
+  \log(1+Y_t)=\beta_0+\beta_1Holiday_t+\beta_2Weekend_t
+  +\boldsymbol\gamma^{\mathsf T}Month_t+\boldsymbol\delta^{\mathsf T}Weekday_t
+  +f(t)+\varepsilon_t.
+\end{equation}
+其中 $f(t)$ 表示平滑趋势。通过系数、置信区间和效应量判断假日效应，不以简单均值差异代替统计
+检验。
+
+\placeholder{填写月份、星期、节假日和节前节后的显著影响。}
+
+\subsection{投放效益与注册量关系}
+
+注册数为非负计数变量。若方差显著大于均值，采用负二项回归而非普通最小二乘：
+\begin{equation}
+  R_t\sim\operatorname{NB}(\mu_t,\theta),
+\end{equation}
+\begin{equation}
+  \log\mu_t=\alpha+
+  \sum_{\ell=0}^{L}\left(
+  \beta_{1\ell}\log(1+B_{t-\ell})+
+  \beta_{2\ell}\log(1+C_{t-\ell})\right)
+  +\boldsymbol\eta^{\mathsf T}\boldsymbol d_t.
+\end{equation}
+通过时间顺序交叉验证选择最大滞后阶数 $L$，并与泊松回归和仅含日历变量的基准模型比较。该模型
+用于总体注册量预测，不解释为某一关键词的真实因果转化率。
+
+\placeholder{填写模型系数、滞后效应、误差指标和注册预测结论。}
+
+\subsection{问题一结论}
+
+\begin{table}[H]
+  \centering
+  \caption{2025 年投放策略诊断与建议}
+  \label{tab:q1-conclusion}
+  \begin{tabularx}{0.96\textwidth}{cXXX}
+    \toprule
+    分析维度 & 主要证据 & 诊断 & 改进建议 \\
+    \midrule
+    设计质量与创意 & \placeholder{指标} & \placeholder{结论} & \placeholder{建议} \\
+    关键词管理 & \placeholder{指标} & \placeholder{结论} & \placeholder{建议} \\
+    出价与预算 & \placeholder{指标} & \placeholder{结论} & \placeholder{建议} \\
+    投放时间 & \placeholder{指标} & \placeholder{结论} & \placeholder{建议} \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+\section{问题二：关键词成本--效益分类模型}
+
+\subsection{分类对象与无效词识别}
+
+以记录 $i=(p,u,k)$ 为分类对象。满足
+\begin{equation}
+  B_i=0,\qquad C_i=0,\qquad V_i=0
+\end{equation}
+的记录直接记为无效词。其跳出率和平均访问时长无定义，不参与其余四类的赋权与阈值估计。
+
+\subsection{低样本可靠性修正}
+
+为避免少量点击造成极端比率，设指标原值为 $r_i$、所属推广单元均值为 $\bar r_u$，采用
+\begin{equation}
+  r_i^{*}=\frac{n_i}{n_i+\tau}r_i+rac{\tau}{n_i+\tau}\bar r_u,
+\end{equation}
+其中 $n_i$ 为点击量或浏览量，$\tau$ 由交叉验证或稳定性分析确定。点击量越少，修正值越接近
+推广单元平均水平。
+
+\subsection{成本得分与效益得分}
+
+成本层选取消费额和 CPC；效益层选取点击量、浏览量、每次点击浏览量、$1-$跳出率和平均访问
+时长。对绝对量取 $\log(1+x)$，随后采用分位数缩尾和稳健标准化。采用 CRITIC 法根据指标波动性
+及相关性确定客观权重\cite{critic}：
+\begin{equation}
+  C_i^{\mathrm{cost}}=\sum_{j\in\mathcal C}v_jz_{ij},\qquad
+  E_i^{\mathrm{eff}}=\sum_{j\in\mathcal E}w_jz_{ij}.
+\end{equation}
+
+\placeholder{给出指标方向、修正方式、权重和相关系数表。}
+
+\subsection{二维阈值分类规则}
+
+设有效词成本得分和效益得分的稳健阈值分别为 $T_C,T_E$，则
+\begin{equation}
+  \mathrm{Class}_i=
+  \begin{cases}
+    \text{黄金词}, & C_i^{\mathrm{cost}}<T_C,\ E_i^{\mathrm{eff}}\geq T_E,\\
+    \text{重点词}, & C_i^{\mathrm{cost}}\geq T_C,\ E_i^{\mathrm{eff}}\geq T_E,\\
+    \text{潜力词}, & C_i^{\mathrm{cost}}<T_C,\ E_i^{\mathrm{eff}}<T_E,\\
+    \text{问题词}, & C_i^{\mathrm{cost}}\geq T_C,\ E_i^{\mathrm{eff}}<T_E.
+  \end{cases}
+\end{equation}
+主模型取中位数阈值，并以不同分位数和单位内阈值作敏感性分析。若推广单元规模差异造成系统性
+偏差，可采用“全局得分与单元内得分加权”的分层校准结果作为最终分类。
+
+\subsection{分类结果与解释}
+
+\begin{table}[H]
+  \centering
+  \caption{五类关键词的主要分类结果}
+  \label{tab:q2-result}
+  \begin{tabular}{ccccc}
+    \toprule
+    类别 & 数量 & 占比 & 平均消费 & 主要特征 \\
+    \midrule
+    黄金词 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{特征} \\
+    重点词 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{特征} \\
+    潜力词 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{特征} \\
+    问题词 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{特征} \\
+    无效词 & \placeholder{数值} & \placeholder{数值} & 0 & 零成本、零点击、零浏览 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+详细分类按附件模板写入 \texttt{result2.xlsx}。同一关键词若出现在多个推广单元，应分别输出，
+不以关键词编码去重。
+
+\section{问题三：历史目标时段的关键词投放优化}
+
+\subsection{关键词关联关系}
+
+建立推广单元集合 $U$ 与关键词集合 $K$ 的二部图 $G=(U,K,E)$。若关键词 $k$ 曾在推广单元
+$u$ 中投放，则 $(u,k)\in E$。对同一关键词跨单元投放的情况，比较其成本和效益，识别更适合的
+单元；由于附件没有关键词语义和关键词日序列，不额外虚构语义相关或时间相关关系。
+
+\subsection{投放档位与效果参数估计}
+
+对每个可选记录 $(k,u,t)$ 设置“停投、低、中、高”四个离散档位 $\ell\in L$。依据关键词年度
+平均投入、所属单元在目标日期的消费季节因子及历史分位数，确定各档位投入 $b_{kut\ell}$。点击、
+浏览和注册的期望值分别记为 $\hat c_{kut\ell},\hat v_{kut\ell},\hat r_{kut\ell}$。
+
+关键词的点击和浏览参数由年度 CPC、每次点击浏览量及单元日级季节因子联合估计；注册量先由
+问题一的日级模型预测总量，再按关键词经可靠性修正后的效益贡献进行分配。该分配仅用于优化中的
+相对比较，不解释为用户级归因。
+
+由于原始数据只能区分首位、上方非首位和其他位置，定义期望展位代理值
+\begin{equation}
+  \hat P_{ut}=1\cdot q^{\mathrm{first}}_{ut}
+  +2.5\left(q^{\mathrm{top}}_{ut}-q^{\mathrm{first}}_{ut}\right)
+  +4\left(1-q^{\mathrm{top}}_{ut}\right).
+\end{equation}
+其中 2.5 表示第 2--3 位平均名次，4 表示上方区域之外的保守边界；并对最后一项取 4--6 进行
+敏感性分析。因此该指标是展位代理，而非精确平均排名。
+
+\subsection{决策变量与目标函数}
+
+定义
+\begin{equation}
+  z_{kut\ell}=\begin{cases}
+    1, & \text{日期 $t$ 对关键词 $k$ 采用档位 $\ell$},\\
+    0, & \text{否则}.
+  \end{cases}
+\end{equation}
+以期望点击、浏览、注册和成本构造综合净效益：
+\begin{equation}
+  \max Z=\sum_{t,u,k,\ell}
+  \left(a_1\hat c_{kut\ell}+a_2\hat v_{kut\ell}
+  +a_3\hat r_{kut\ell}-a_4b_{kut\ell}\right)z_{kut\ell}.
+\end{equation}
+权重 $a_j$ 经量纲统一后确定，并通过权重扰动检验策略稳定性。
+
+\subsection{约束条件}
+
+\paragraph{唯一档位约束}
+\begin{equation}
+  \sum_{\ell\in L}z_{kut\ell}=1,\qquad \forall k,u,t.
+\end{equation}
+
+\paragraph{预算约束}
+设目标时段原实际总消费为 $B^{\mathrm{hist}}$，则
+\begin{equation}
+  \sum_{t,u,k,\ell}b_{kut\ell}z_{kut\ell}\leq B^{\mathrm{hist}}.
+\end{equation}
+另设置方案级、推广单元级和单日预算上限，避免资金不现实地集中到单日或单元。
+
+\paragraph{关键词类别约束}
+无效词不得投放；问题词设置严格数量或金额上限；黄金词和重点词保证最低覆盖；潜力词保留少量
+探索预算，以兼顾当前收益和后续学习。
+
+\paragraph{跨单元冲突约束}
+若同一关键词在多个单元中同时竞价会造成内部竞争，则设置
+\begin{equation}
+  \sum_{u:(u,k)\in E}\sum_{\ell\neq 0}z_{kut\ell}\leq 1,
+  \qquad \forall k,t.
+\end{equation}
+并以允许重复投放的情景作为对照，检验该假设对结果的影响。
+
+\subsection{两组历史时段求解结果}
+
+分别对 2025 年 2 月 1--8 日和 8 月 1--8 日求解模型，将逐日方案、推广单元、关键词、投入金额、
+预期展位、点击、浏览和注册结果写入 \texttt{result3.xlsx}。
+
+\begin{table}[H]
+  \centering
+  \caption{优化策略与原策略对比}
+  \label{tab:q3-compare}
+  \begin{tabular}{cccccc}
+    \toprule
+    时段 & 策略 & 总成本 & 点击量 & 浏览量 & 预期注册量 \\
+    \midrule
+    2 月 1--8 日 & 原策略 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    2 月 1--8 日 & 优化策略 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    8 月 1--8 日 & 原策略 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    8 月 1--8 日 & 优化策略 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\placeholder{解释预算转移、关键词增删以及优化策略优于原策略的原因。}
+
+\section{问题四：不确定环境下的 2026 年投放优化}
+
+\subsection{不确定参数及预测方法}
+
+需要预测的参数包括竞价代理 CPC、展现量、展位代理、点击量、浏览量和注册量。采用滚动时间窗
+回测选择预测模型，并保留月份、星期、节假日、趋势及推广单元等特征。由于仅有一年数据，不追求
+复杂长序列模型，而通过相似日匹配、回归预测与残差分块 Bootstrap 组合生成情景\cite{bootstrap}。
+
+设第 $\omega$ 个情景下参数为
+\begin{equation}
+  \boldsymbol\xi^{\omega}_{kut}=
+  \left(\mathrm{CPC}^{\omega}_{kut},I^{\omega}_{kut},P^{\omega}_{kut},
+  C^{\omega}_{kut},V^{\omega}_{kut},R^{\omega}_{kut}\right).
+\end{equation}
+对每项指标报告期望值及 \placeholder{例如 10\%--90\%} 预测区间，而非把置信区间误写成个体
+预测范围。
+
+\subsection{2026 年预算口径}
+
+题目只规定 2026 年总预算不超过 2025 年投入，未直接给出目标周预算。本文以 2025 年全年预算
+上限和历史同期周预算占比确定 2026 年 9 月 11--17 日基准预算，并设置宽松、中性、紧缩三种周
+预算情景。\placeholder{填写最终采用的周预算及其推导过程。}
+
+\subsection{情景鲁棒优化模型}
+
+设情景 $\omega$ 下策略总净效益为 $Z^{\omega}(z)$。在最大化期望效益的同时，采用条件风险价值
+控制低效益尾部风险\cite{cvar}：
+\begin{equation}
+  \max_{z,\eta,s_{\omega}}
+  \quad \frac{1}{|\Omega|}\sum_{\omega\in\Omega}Z^{\omega}(z)
+  -\lambda\left(\eta+rac{1}{(1-\alpha)|\Omega|}
+  \sum_{\omega\in\Omega}s_{\omega}\right),
+\end{equation}
+\begin{equation}
+  s_{\omega}\geq -Z^{\omega}(z)-\eta,qquad
+  s_{\omega}\geq0.
+\end{equation}
+同时要求各情景下投入不超过预算，并继承问题三中的投放档位、类别覆盖和跨单元冲突约束。参数
+$\lambda$ 表示风险厌恶程度：$\lambda=0$ 时退化为风险中性模型，$\lambda$ 越大策略越保守。
+
+\subsection{2026 年 9 月 11--17 日投放策略}
+
+\begin{table}[H]
+  \centering
+  \caption{2026 年目标周逐日策略汇总}
+  \label{tab:q4-daily}
+  \begin{tabular}{cccccc}
+    \toprule
+    日期 & 投入金额 & 关键词数 & 预期点击 & 预期浏览 & 预期注册 \\
+    \midrule
+    9 月 11 日 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    9 月 12 日 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    9 月 13 日 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    9 月 14 日 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    9 月 15 日 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    9 月 16 日 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    9 月 17 日 & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} & \placeholder{数值} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+详细逐关键词结果写入 \texttt{result4.xlsx}。由于官方模板 Sheet1 没有竞价和展现量列，提交时
+保留 Sheet1 原有字段，同时在同一文件增加“区间估计”工作表，记录竞价、展现量、展位、点击、
+浏览和注册的期望、下界和上界；若最终提交系统要求不得增加工作表，则将完整区间置于支撑材料，
+并在正文中给出核心结果。
+
+\section{模型检验与敏感性分析}
+
+\subsection{预测模型回测}
+
+采用保持时间顺序的滚动回测，禁止随机打乱未来和过去。报告 MAE、RMSE、MAPE 或适合计数数据
+的偏差指标，并与历史均值、同期均值等简单基准比较。对问题三的两个目标时段，可在训练时剔除
+相应区间，再检验预测与真实值的误差。
+
+\subsection{分类稳定性}
+
+分别改变收缩参数 $\tau$、成本/效益权重及阈值分位数，比较五类关键词数量、分类一致率和关键
+词集合的 Jaccard 相似度。\placeholder{填写最敏感的参数及结论。}
+
+\subsection{优化模型敏感性}
+
+对预算上限、风险厌恶系数 $\lambda$、冲突约束和投放档位边界进行扰动，绘制预算--效益前沿，
+考察最优关键词集合及目标值的变化。\placeholder{填写策略在何种参数范围内保持稳定。}
+
+\subsection{不确定区间覆盖率}
+
+利用 2025 年滚动回测计算各预测区间的经验覆盖率和平均区间宽度。若覆盖率明显偏离名义水平，
+重新校准 Bootstrap 分位数，确保问题四的风险范围具有实际含义。
+
+\section{模型评价与改进}
+
+\subsection{模型优点}
+
+\begin{enumerate}
+  \item 保留方案--推广单元--关键词层级，避免对重复关键词错误去重；
+  \item 将结构性缺失、小样本比率和指标偏态纳入预处理，分类结果具有较强可解释性；
+  \item 问题三与问题四共享同一投放决策框架，实现从历史优化到未来风险决策的自然衔接；
+  \item 通过时间回测、阈值扰动和情景分析检验模型，而非只报告单次最优结果。
+\end{enumerate}
+
+\subsection{模型局限}
+
+\begin{enumerate}
+  \item 缺少关键词日级展现、注册和真实出价，部分指标只能通过层级模型估计；
+  \item 日级注册数包含 SEM 广告等多种来源，无法完成用户级因果归因；
+  \item 只有一年的历史数据，年度趋势和长期季节性识别能力有限；
+  \item 关键词为匿名编码，无法利用搜索语义、匹配方式和用户意图信息。
+\end{enumerate}
+
+\subsection{改进方向}
+
+若能获得关键词逐日数据、真实出价、用户转化路径和广告素材，可进一步建立多触点归因模型、
+层次贝叶斯响应模型与在线学习机制，并通过小规模随机试验识别竞价和创意的因果效应。
+
+\section{结论与投放建议}
+
+\begin{enumerate}
+  \item \placeholder{概括问题一最重要的策略诊断，不重复罗列全部数值。}
+  \item \placeholder{概括问题二分类结构及不同类别的管理动作。}
+  \item \placeholder{概括问题三两个时段的预算调整方向和提升幅度。}
+  \item \placeholder{概括问题四目标周策略、预测区间和风险控制结论。}
+\end{enumerate}
+
+% 按 2026 年竞赛规定，AI 工具使用声明必须放在参考文献之前。
+\section*{AI工具使用声明}
+
+本参赛队在竞赛过程中使用了AI工具，主要用于\placeholder{按实际情况填写，例如论文大纲整理、
+语言润色和代码调试}，详细使用情况见支撑材料。
+
+\begin{thebibliography}{9}
+  \bibitem{critic}
+  Diakoulaki D, Mavrotas G, Papayannakis L.
+  Determining objective weights in multiple criteria problems: The CRITIC method[J].
+  Computers \& Operations Research, 1995, 22(7): 763--770.
+
+  \bibitem{bootstrap}
+  Efron B, Tibshirani R J.
+  An Introduction to the Bootstrap[M]. New York: Chapman \& Hall, 1993.
+
+  \bibitem{cvar}
+  Rockafellar R T, Uryasev S.
+  Optimization of conditional value-at-risk[J].
+  Journal of Risk, 2000, 2(3): 21--41.
+
+  \bibitem{robust}
+  Ben-Tal A, El Ghaoui L, Nemirovski A.
+  Robust Optimization[M]. Princeton: Princeton University Press, 2009.
+
+  % TODO：正式论文中补充 SEM、计数回归、时间序列和所用软件的权威文献，
+  % 并确保每一条参考文献均在正文中被实际引用。
+\end{thebibliography}
+
+\appendix
+
+\section{支撑材料文件列表}
+
+% 文件名应在最终提交前与压缩包逐项核对，所有文件均不得包含身份信息。
+\begin{itemize}
+  \item \texttt{result2.xlsx}：问题二关键词分类详细结果；
+  \item \texttt{result3.xlsx}：问题三两个历史时段的逐日投放策略；
+  \item \texttt{result4.xlsx}：问题四 2026 年目标周逐日投放策略及区间估计；
+  \item \texttt{code/data\_clean.py}：数据清洗与指标构造程序；
+  \item \texttt{code/question1.py}：问题一统计分析与绘图程序；
+  \item \texttt{code/question2.py}：问题二关键词分类程序；
+  \item \texttt{code/question3.py}：问题三确定性优化程序；
+  \item \texttt{code/question4.py}：问题四预测与鲁棒优化程序；
+  \item \texttt{results/}：正文未能完整展示的中间表格和高清图；
+  \item \texttt{AI工具使用详情.pdf}：AI 工具名称、使用环节、主要提示方式、人工修改与核验说明。
+\end{itemize}
+
+\section{完整源程序}
+
+正式提交时，应在本附录列出建模所用的全部完整、可运行程序，不能只放伪代码或核心片段；同时
+将相同源文件放入支撑材料。以下命令在源文件完成后取消注释：
+
+\begin{verbatim}
+% \lstinputlisting[language=Python]{code/data_clean.py}
+% \lstinputlisting[language=Python]{code/question1.py}
+% \lstinputlisting[language=Python]{code/question2.py}
+% \lstinputlisting[language=Python]{code/question3.py}
+% \lstinputlisting[language=Python]{code/question4.py}
+\end{verbatim}
+
+\section{结果文件字段与复现说明}
+
+\placeholder{说明运行环境、依赖版本、程序执行顺序、随机种子，以及从附件 1 复现
+\texttt{result2.xlsx}--\texttt{result4.xlsx} 的完整步骤。}
+
+\section{AI工具使用详情说明索引}
+
+根据 2026 年竞赛规定，详细说明单独保存为支撑材料中的 \texttt{AI工具使用详情.pdf}。该文件
+应包括工具名称、版本或模型、具体用途和阶段、主要提示方式、使用过程，以及对输出的采纳、人工
+修改和逐项核验情况。
+
+\end{document}

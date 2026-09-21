@@ -168,7 +168,11 @@ def build_formal_holiday_matches(daily: pd.DataFrame) -> pd.DataFrame:
                     "前置间隔天数": int((holiday_date - before_date).days),
                     "后置对照日期": after_date,
                     "后置间隔天数": int((after_date - holiday_date).days),
-                    "匹配规则": "假期区间前后各14天内非节假日；同星期；两侧分别不放回最近匹配",
+                    "匹配规则": (
+                        "候选窗口按整个假期区间边界定义：开始日前1—14天、"
+                        "结束日后1—14天的非节假日；每个假日按同星期在两侧"
+                        "分别不放回最近匹配；故相对单个假日的间隔可超过14天"
+                    ),
                 }
             )
 

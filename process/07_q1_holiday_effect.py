@@ -44,6 +44,8 @@ DATE_TYPES = [
     "端午节",
     "国庆/中秋假期",
 ]
+# 元旦仅有 1 个观测日：保留在描述统计与图形中，不进入正式推断。
+INFERENCE_DATE_TYPES = [date_type for date_type in DATE_TYPES if date_type != "元旦"]
 HOLIDAY_TYPES = ["元旦", "春节", "清明节", "劳动节", "端午节", "国庆/中秋假期"]
 METRICS = ["总消费额", "总点击量", "CTR", "CPC", "新注册数"]
 
@@ -195,13 +197,17 @@ def build_descriptive_summary(daily: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def metric_groups(daily: pd.DataFrame, metric: str) -> dict[str, np.ndarray]:
-    """提取某指标在各日期类型下的非缺失观测。"""
+def metric_groups(
+    daily: pd.DataFrame,
+    metric: str,
+    date_types: list[str],
+) -> dict[str, np.ndarray]:
+    """提取某指标在指定正式推断日期类型下的非缺失观测。"""
     groups = {
         date_type: daily.loc[daily["日期类型"] == date_type, metric]
         .dropna()
         .to_numpy(dtype=float)
-        for date_type in DATE_TYPES
+        for date_type in date_types
     }
     empty = [date_type for date_type, values in groups.items() if len(values) == 0]
     if empty:
@@ -281,9 +287,10 @@ def dunn_posthoc(
     groups: dict[str, np.ndarray],
 ) -> list[dict[str, object]]:
     """执行 Dunn 两两检验，并使用 Holm 法校正。"""
-    values = np.concatenate([groups[date_type] for date_type in DATE_TYPES])
+    group_names = list(groups)
+    values = np.concatenate([groups[date_type] for date_type in group_names])
     labels = np.concatenate(
-        [np.repeat(date_type, len(groups[date_type])) for date_type in DATE_TYPES]
+        [np.repeat(date_type, len(groups[date_type])) for date_type in group_names]
     )
     ranks = stats.rankdata(values, method="average")
     sample_size = len(values)
@@ -293,12 +300,12 @@ def dunn_posthoc(
     tie_correction = tie_sum / (12 * (sample_size - 1))
     rank_variance = sample_size * (sample_size + 1) / 12 - tie_correction
     mean_ranks = {
-        date_type: float(ranks[labels == date_type].mean()) for date_type in DATE_TYPES
+        date_type: float(ranks[labels == date_type].mean()) for date_type in group_names
     }
 
     rows: list[dict[str, object]] = []
     raw_p_values: list[float] = []
-    for first_name, second_name in combinations(DATE_TYPES, 2):
+    for first_name, second_name in combinations(group_names, 2):
         first = groups[first_name]
         second = groups[second_name]
         denominator = np.sqrt(rank_variance * (1 / len(first) + 1 / len(second)))
@@ -310,7 +317,9 @@ def dunn_posthoc(
                 "指标": metric,
                 "事后方法": "Dunn检验",
                 "组1": first_name,
+                "组1样本数": len(first),
                 "组2": second_name,
+                "组2样本数": len(second),
                 "统计量名称": "z",
                 "统计量": float(z_statistic),
                 "原始p值": p_value,
@@ -332,9 +341,10 @@ def parametric_posthoc(
     groups: dict[str, np.ndarray],
 ) -> list[dict[str, object]]:
     """执行等方差两独立样本 t 检验，并使用 Holm 法校正。"""
+    group_names = list(groups)
     rows: list[dict[str, object]] = []
     raw_p_values: list[float] = []
-    for first_name, second_name in combinations(DATE_TYPES, 2):
+    for first_name, second_name in combinations(group_names, 2):
         first = groups[first_name]
         second = groups[second_name]
         result = stats.ttest_ind(first, second, equal_var=True)
@@ -344,7 +354,9 @@ def parametric_posthoc(
                 "指标": metric,
                 "事后方法": "两独立样本t检验",
                 "组1": first_name,
+                "组1样本数": len(first),
                 "组2": second_name,
+                "组2样本数": len(second),
                 "统计量名称": "t",
                 "统计量": float(result.statistic),
                 "原始p值": float(result.pvalue),
@@ -367,9 +379,12 @@ def analyze_metric(
     metric: str,
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
     """完成单个指标的前提检查、整体检验和事后比较。"""
-    groups = metric_groups(daily, metric)
-    values = [groups[date_type] for date_type in DATE_TYPES]
-    metric_summary = summary.loc[summary["指标"] == metric]
+    groups = metric_groups(daily, metric, INFERENCE_DATE_TYPES)
+    values = [groups[date_type] for date_type in INFERENCE_DATE_TYPES]
+    metric_summary = summary.loc[
+        (summary["指标"] == metric)
+        & summary["日期类型"].isin(INFERENCE_DATE_TYPES)
+    ]
 
     all_normality_testable = metric_summary["Shapiro_p值"].notna().all()
     all_normality_passed = bool(
@@ -411,7 +426,13 @@ def analyze_metric(
     overall_row = {
         "指标": metric,
         "显著性水平": ALPHA,
-        "组数": len(DATE_TYPES),
+        "推断范围": "排除元旦（单日样本）",
+        "纳入日期类型": "；".join(INFERENCE_DATE_TYPES),
+        "各组样本量": "；".join(
+            f"{date_type}:{len(groups[date_type])}"
+            for date_type in INFERENCE_DATE_TYPES
+        ),
+        "组数": len(INFERENCE_DATE_TYPES),
         "总样本数": sum(len(group) for group in values),
         "所有组正态性可检验": all_normality_testable,
         "所有组正态性通过": all_normality_passed,
@@ -592,7 +613,9 @@ def main() -> None:
         "指标",
         "事后方法",
         "组1",
+        "组1样本数",
         "组2",
+        "组2样本数",
         "统计量名称",
         "统计量",
         "原始p值",

@@ -35,6 +35,7 @@ FIGURE_DIR = PROJECT_ROOT / "output" / "figures"
 BASIC_STATS_CSV = TABLE_DIR / "q1_keyword_basic_stats.csv"
 ANOMALIES_CSV = TABLE_DIR / "q1_keyword_anomalies.csv"
 CONCENTRATION_CSV = TABLE_DIR / "q1_keyword_concentration.csv"
+GINI_COMPARISON_CSV = TABLE_DIR / "q1_keyword_gini_comparison.csv"
 CORRELATIONS_CSV = TABLE_DIR / "q1_keyword_correlations.csv"
 DUPLICATE_SUMMARY_CSV = TABLE_DIR / "q1_keyword_duplicate_summary.csv"
 DUPLICATE_TOP20_CSV = TABLE_DIR / "q1_keyword_duplicate_top20.csv"
@@ -291,34 +292,94 @@ def contribution_share(values: pd.Series, total: float) -> float:
     return float(values.sum() / total) if total != 0 else np.nan
 
 
-def build_concentration(data: pd.DataFrame) -> pd.DataFrame:
-    """按消费额和点击量排序，计算头部记录的多指标贡献率。"""
-    totals = {metric: float(data[metric].sum()) for metric in ["消费额", "点击量", "浏览量"]}
-    gini = {
-        "消费额": gini_coefficient(data["消费额"]),
-        "点击量": gini_coefficient(data["点击量"]),
-    }
+def build_concentration_scopes(
+    data: pd.DataFrame,
+) -> list[tuple[str, str, pd.DataFrame, list[str]]]:
+    """构造全部记录、实际效果记录和独立关键词三种集中度口径。"""
+    effective = data.loc[~data["zero_effect"]].copy()
+    keyword_aggregated = (
+        data.groupby("关键词", observed=True, sort=True)[["消费额", "点击量", "浏览量"]]
+        .sum()
+        .reset_index()
+    )
+    return [
+        ("全部投放记录（含zero_effect）", "关键词投放记录", data, ID_COLUMNS),
+        ("有实际效果记录（排除zero_effect）", "关键词投放记录", effective, ID_COLUMNS),
+        ("独立关键词（按关键词编码聚合）", "独立关键词", keyword_aggregated, ["关键词"]),
+    ]
+
+
+def build_concentration(
+    scopes: list[tuple[str, str, pd.DataFrame, list[str]]],
+) -> pd.DataFrame:
+    """在三种口径下计算头部对象的消费、点击和浏览贡献率。"""
     rows: list[dict[str, object]] = []
-    for sort_metric in ["消费额", "点击量"]:
-        ordered = data.sort_values(
-            [sort_metric, *ID_COLUMNS],
-            ascending=[False, True, True, True],
-            kind="mergesort",
-        )
-        for proportion in TOP_PROPORTIONS:
-            selected_count = max(1, ceil(len(ordered) * proportion))
-            selected = ordered.head(selected_count)
+    for scope_name, object_name, scope_data, key_columns in scopes:
+        totals = {
+            metric: float(scope_data[metric].sum())
+            for metric in ["消费额", "点击量", "浏览量"]
+        }
+        gini = {
+            "消费额": gini_coefficient(scope_data["消费额"]),
+            "点击量": gini_coefficient(scope_data["点击量"]),
+        }
+        for sort_metric in ["消费额", "点击量"]:
+            ordered = scope_data.sort_values(
+                [sort_metric, *key_columns],
+                ascending=[False, *([True] * len(key_columns))],
+                kind="mergesort",
+            )
+            for proportion in TOP_PROPORTIONS:
+                selected_count = max(1, ceil(len(ordered) * proportion))
+                selected = ordered.head(selected_count)
+                rows.append(
+                    {
+                        "分析口径": scope_name,
+                        "分析对象": object_name,
+                        "总体数量": len(ordered),
+                        "排序依据": f"{sort_metric}降序",
+                        "头部比例": proportion,
+                        "入选对象数": selected_count,
+                        "实际入选比例": selected_count / len(ordered),
+                        "总消费额贡献率": contribution_share(
+                            selected["消费额"], totals["消费额"]
+                        ),
+                        "总点击量贡献率": contribution_share(
+                            selected["点击量"], totals["点击量"]
+                        ),
+                        "总浏览量贡献率": contribution_share(
+                            selected["浏览量"], totals["浏览量"]
+                        ),
+                        "排序指标Gini系数": gini[sort_metric],
+                        "边界处理": "对象数向上取整；并列值按对象编码稳定排序",
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+def build_gini_comparison(
+    scopes: list[tuple[str, str, pd.DataFrame, list[str]]],
+) -> pd.DataFrame:
+    """单独汇总三种分析口径下的消费额和点击量 Gini。"""
+    rows: list[dict[str, object]] = []
+    for scope_name, object_name, scope_data, _ in scopes:
+        for metric in ["消费额", "点击量"]:
             rows.append(
                 {
-                    "排序依据": f"{sort_metric}降序",
-                    "头部记录比例": proportion,
-                    "入选记录数": selected_count,
-                    "实际入选记录比例": selected_count / len(ordered),
-                    "总消费额贡献率": contribution_share(selected["消费额"], totals["消费额"]),
-                    "总点击量贡献率": contribution_share(selected["点击量"], totals["点击量"]),
-                    "总浏览量贡献率": contribution_share(selected["浏览量"], totals["浏览量"]),
-                    "排序指标Gini系数": gini[sort_metric],
-                    "边界处理": "记录数向上取整；并列值按三元组编码稳定排序",
+                    "分析口径": scope_name,
+                    "分析对象": object_name,
+                    "总体数量": len(scope_data),
+                    "指标": metric,
+                    "该指标零值对象数": int(scope_data[metric].eq(0).sum()),
+                    "该指标零值对象比例": float(scope_data[metric].eq(0).mean()),
+                    "Gini系数": gini_coefficient(scope_data[metric]),
+                    "zero_effect处理": (
+                        "排除消费额、点击量、浏览量均为0的记录"
+                        if scope_name.startswith("有实际效果")
+                        else "先按关键词汇总，保留汇总后为0的关键词"
+                        if scope_name.startswith("独立关键词")
+                        else "保留"
+                    ),
                 }
             )
     return pd.DataFrame(rows)
@@ -349,23 +410,40 @@ def configure_chinese_font() -> None:
     plt.rcParams["axes.unicode_minus"] = False
 
 
-def save_lorenz_plot(data: pd.DataFrame) -> None:
-    """绘制消费额和点击量 Lorenz 曲线。"""
+def save_lorenz_plot(
+    scopes: list[tuple[str, str, pd.DataFrame, list[str]]],
+) -> None:
+    """并列绘制三种分析口径下的消费额和点击量 Lorenz 曲线。"""
     configure_chinese_font()
-    figure, axis = plt.subplots(figsize=(8, 7))
+    figure, axes = plt.subplots(1, 3, figsize=(19, 6.3), sharex=True, sharey=True)
     colors = {"消费额": "#C44E52", "点击量": "#4C72B0"}
-    for metric in ["消费额", "点击量"]:
-        x, y = lorenz_coordinates(data[metric])
-        gini = gini_coefficient(data[metric])
-        axis.plot(x, y, linewidth=2.2, color=colors[metric], label=f"{metric}（Gini={gini:.3f}）")
-    axis.plot([0, 1], [0, 1], linestyle="--", color="#666666", linewidth=1.2, label="完全均等线")
-    axis.set_title("关键词投放记录的消费额与点击量 Lorenz 曲线")
-    axis.set_xlabel("累计关键词投放记录比例")
-    axis.set_ylabel("累计指标贡献比例")
-    axis.set_xlim(0, 1)
-    axis.set_ylim(0, 1)
-    axis.grid(linestyle="--", linewidth=0.6, alpha=0.4)
-    axis.legend()
+    for axis, (scope_name, object_name, scope_data, _) in zip(axes, scopes):
+        for metric in ["消费额", "点击量"]:
+            x, y = lorenz_coordinates(scope_data[metric])
+            gini = gini_coefficient(scope_data[metric])
+            axis.plot(
+                x,
+                y,
+                linewidth=2.2,
+                color=colors[metric],
+                label=f"{metric}（Gini={gini:.3f}）",
+            )
+        axis.plot(
+            [0, 1],
+            [0, 1],
+            linestyle="--",
+            color="#666666",
+            linewidth=1.2,
+            label="完全均等线",
+        )
+        axis.set_title(f"{scope_name}\n$n={len(scope_data)}$")
+        axis.set_xlabel(f"累计{object_name}比例")
+        axis.set_xlim(0, 1)
+        axis.set_ylim(0, 1)
+        axis.grid(linestyle="--", linewidth=0.6, alpha=0.4)
+        axis.legend(fontsize=9)
+    axes[0].set_ylabel("累计指标贡献比例")
+    figure.suptitle("不同统计口径下的消费额与点击量 Lorenz 曲线", fontsize=16)
     figure.tight_layout()
     figure.savefig(LORENZ_FIGURE, dpi=300, bbox_inches="tight")
     plt.close(figure)
@@ -585,6 +663,7 @@ def save_csv(dataframe: pd.DataFrame, path: Path) -> None:
 def print_results(
     basic_stats: pd.DataFrame,
     concentration: pd.DataFrame,
+    gini_comparison: pd.DataFrame,
     correlations: pd.DataFrame,
     duplicate_summary: pd.DataFrame,
     data: pd.DataFrame,
@@ -599,13 +678,28 @@ def print_results(
         print(
             concentration[
                 [
+                    "分析口径",
+                    "总体数量",
                     "排序依据",
-                    "头部记录比例",
-                    "入选记录数",
+                    "头部比例",
+                    "入选对象数",
                     "总消费额贡献率",
                     "总点击量贡献率",
                     "总浏览量贡献率",
-                    "排序指标Gini系数",
+                ]
+            ].to_string(index=False)
+        )
+        print("\nGini口径对照")
+        print(
+            gini_comparison[
+                [
+                    "分析口径",
+                    "分析对象",
+                    "总体数量",
+                    "指标",
+                    "该指标零值对象数",
+                    "该指标零值对象比例",
+                    "Gini系数",
                 ]
             ].to_string(index=False)
         )
@@ -654,7 +748,9 @@ def main() -> None:
     data = load_and_prepare()
     basic_stats = build_basic_stats(data)
     anomalies = build_anomaly_details(data)
-    concentration = build_concentration(data)
+    concentration_scopes = build_concentration_scopes(data)
+    concentration = build_concentration(concentration_scopes)
+    gini_comparison = build_gini_comparison(concentration_scopes)
     correlations = build_correlations(data)
     duplicate_summary = build_duplicate_summary(data)
     duplicate_top20 = build_duplicate_top20(data, duplicate_summary)
@@ -665,16 +761,18 @@ def main() -> None:
     save_csv(basic_stats, BASIC_STATS_CSV)
     save_csv(anomalies, ANOMALIES_CSV)
     save_csv(concentration, CONCENTRATION_CSV)
+    save_csv(gini_comparison, GINI_COMPARISON_CSV)
     save_csv(correlations, CORRELATIONS_CSV)
     save_csv(duplicate_summary, DUPLICATE_SUMMARY_CSV)
     save_csv(duplicate_top20, DUPLICATE_TOP20_CSV)
     save_csv(unit_summary, UNIT_SUMMARY_CSV)
-    save_lorenz_plot(data)
+    save_lorenz_plot(concentration_scopes)
     save_scatterplots(data, correlations)
 
     print_results(
         basic_stats,
         concentration,
+        gini_comparison,
         correlations,
         duplicate_summary,
         data,

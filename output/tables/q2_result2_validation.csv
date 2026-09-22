@@ -1,0 +1,52 @@
+﻿check_name,expected,actual,passed
+input_required_columns,序号 | 关键词 | 方案ID | 推广单元ID | 最终类别,序号 | 关键词 | 方案ID | 推广单元ID | 最终类别,True
+input_record_count,2227,2227,True
+input_sequence_nonmissing_count,2227,2227,True
+input_sequence_unique_count,2227,2227,True
+input_missing_category_count,0,0,True
+input_allowed_categories,黄金词 | 重点词 | 潜力词 | 问题词 | 无效词,无效词 | 潜力词 | 重点词 | 问题词 | 黄金词,True
+input_category_count_黄金词,198,198,True
+input_category_count_重点词,502,502,True
+input_category_count_潜力词,461,461,True
+input_category_count_问题词,178,178,True
+input_category_count_无效词,888,888,True
+input_category_count_total,2227,2227,True
+category_counts_file_consistency,黄金词:198 | 重点词:502 | 潜力词:461 | 问题词:178 | 无效词:888,黄金词:198 | 重点词:502 | 潜力词:461 | 问题词:178 | 无效词:888,True
+source_sheet_exists,Sheet3,Sheet1 | Sheet2 | Sheet3,True
+source_required_columns,序号 | 关键词 | 方案ID | 推广单元ID,序号 | 关键词 | 方案ID | 推广单元ID,True
+source_record_count,2227,2227,True
+source_incomplete_identifier_rows,0,0,True
+source_sequence_unique_count,2227,2227,True
+score_source_序号_matched_rows,2227,2227,True
+score_source_关键词_matched_rows,2227,2227,True
+score_source_方案ID_matched_rows,2227,2227,True
+score_source_推广单元ID_matched_rows,2227,2227,True
+score_source_complete_matched_rows,2227,2227,True
+template_sheet_count,1,1,True
+template_sheet_name,Sheet1,Sheet1,True
+template_header_order,方案ID | 推广单元 | 序号 | 黄金词 | 重点词 | 潜力词 | 问题词 | 无效词,方案ID | 推广单元 | 序号 | 黄金词 | 重点词 | 潜力词 | 问题词 | 无效词,True
+template_start_write_row,2,2,True
+output_template_sheet_names,Sheet1,Sheet1,True
+output_template_headers,方案ID | 推广单元 | 序号 | 黄金词 | 重点词 | 潜力词 | 问题词 | 无效词,方案ID | 推广单元 | 序号 | 黄金词 | 重点词 | 潜力词 | 问题词 | 无效词,True
+output_template_header_styles,1 | 1 | 1 | 1 | 1 | 1 | 1 | 1,1 | 1 | 1 | 1 | 1 | 1 | 1 | 1,True
+output_template_column_widths,A:8.58203125 | I:8.6640625,A:8.58203125 | I:8.6640625,True
+output_template_row_heights,1:14.0,1:14.0,True
+output_template_merged_ranges,,,True
+output_template_freeze_panes,,,True
+output_template_auto_filter,,,True
+output_record_count,2227,2227,True
+output_duplicate_sequence_count,0,0,True
+output_missing_classification_rows,0,0,True
+output_multiple_classification_rows,0,0,True
+output_exactly_one_category_rows,2227,2227,True
+output_category_count_黄金词,198,198,True
+output_category_count_重点词,502,502,True
+output_category_count_潜力词,461,461,True
+output_category_count_问题词,178,178,True
+output_category_count_无效词,888,888,True
+output_sequence_matched_rows,2227,2227,True
+output_keyword_matched_rows,2227,2227,True
+output_plan_id_matched_rows,2227,2227,True
+output_unit_id_matched_rows,2227,2227,True
+output_category_matched_rows,2227,2227,True
+output_unique_source_records,2227,2227,True
